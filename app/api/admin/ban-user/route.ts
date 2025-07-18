@@ -13,7 +13,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
 
-    // Check if user is admin
+    // Check if user is admin (RLS on the RPC function also enforces this)
     const { data: profile } = await supabase.from("profiles").select("role").eq("id", user.id).single()
 
     if (!profile || profile.role !== "admin") {
@@ -26,17 +26,23 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Missing required fields" }, { status: 400 })
     }
 
+    let error
     if (action === "ban") {
-      await supabase.rpc("ban_user", { user_id: userId })
+      ;({ error } = await supabase.rpc("ban_user", { user_id_input: userId }))
     } else if (action === "unban") {
-      await supabase.rpc("unban_user", { user_id: userId })
+      ;({ error } = await supabase.rpc("unban_user", { user_id_input: userId }))
     } else {
       return NextResponse.json({ error: "Invalid action" }, { status: 400 })
     }
 
+    if (error) {
+      console.error("Error in ban user rpc:", error)
+      return NextResponse.json({ error: error.message }, { status: 500 })
+    }
+
     return NextResponse.json({ success: true })
   } catch (error) {
-    console.error("Error in ban user:", error)
+    console.error("Error in ban user route:", error)
     return NextResponse.json({ error: "Internal server error" }, { status: 500 })
   }
 }

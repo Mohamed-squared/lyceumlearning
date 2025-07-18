@@ -1,34 +1,22 @@
-import type { NextRequest } from "next/server"
+import { type NextRequest, NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
 import { GoogleGenerativeAI } from "@google/generative-ai"
-// import { pdfParse } from "pdf-parse" // REMOVED
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!)
 
-// --- helpers ---------------------------------------------------------------
+export const runtime = "edge" // Use edge runtime for this route
 
-async function fetchPdfBuffer(url: string): Promise<Buffer> {
-  const res = await fetch(url, { cache: "no-store" })
-  if (!res.ok) {
-    throw new Error(`Unable to download PDF: ${res.statusText}`)
-  }
-  const arrayBuffer = await res.arrayBuffer()
-  return Buffer.from(arrayBuffer)
-}
-
-// --- route handler ---------------------------------------------------------
-
-export async function POST(request: NextRequest): Promise<any> {
+export async function POST(request: NextRequest): Promise<NextResponse> {
   try {
     const supabase = await createClient()
 
     // Check authentication
     const {
       data: { user },
-      error: authError,
     } = await supabase.auth.getUser()
-    if (authError || !user) {
-      return { error: "Unauthorized" }, { status: 401 }
+
+    if (!user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
 
     const contentType = request.headers.get("content-type")
@@ -44,25 +32,22 @@ export async function POST(request: NextRequest): Promise<any> {
       const descriptionField = formData.get("description") as string
 
       if (!file) {
-        return { error: "No file provided" }, { status: 400 }
+        return NextResponse.json({ error: "No file provided" }, { status: 400 })
       }
 
       title = titleField || "Generated Testbank"
       description = descriptionField || "AI-generated testbank from uploaded content"
 
-      // Process PDF file
+      // Process PDF file (dynamically import to support edge runtime)
       if (file.type === "application/pdf") {
         try {
+          const { default: pdf } = await import("pdf-parse/lib/pdf-parse.js")
           const buffer = await file.arrayBuffer()
-
-          // 👉 dynamic import so pdf-parse is evaluated at runtime, not build time
-          const { default: pdfParse } = await import("pdf-parse")
-          const data = await pdfParse(Buffer.from(buffer))
-
+          const data = await pdf(Buffer.from(buffer))
           textContent = data.text
         } catch (error) {
           console.error("PDF parsing error:", error)
-          return { error: "Failed to parse PDF" }, { status: 400 }
+          return NextResponse.json({ error: "Failed to parse PDF" }, { status: 400 })
         }
       } else {
         // Handle text files
@@ -77,7 +62,7 @@ export async function POST(request: NextRequest): Promise<any> {
     }
 
     if (!textContent.trim()) {
-      return { error: "No content provided" }, { status: 400 }
+      return NextResponse.json({ error: "No content provided" }, { status: 400 })
     }
 
     // Generate questions using AI
@@ -85,30 +70,31 @@ export async function POST(request: NextRequest): Promise<any> {
 
     const prompt = `
     Based on the following content, generate 10 multiple-choice questions with 4 options each.
-    Format the response as a JSON array where each question has:
-    - topic: string (main topic/subject)
-    - content: string (the question text)
-    - options: array of 4 strings (A, B, C, D options)
-    - answer: string (the correct option letter: A, B, C, or D)
-    - difficulty: string (easy, medium, or hard)
-    - keywords: array of relevant keywords
+    Format the response as a JSON array of objects. Each object must have these exact keys:
+    "topic": string (main topic/subject of the question)
+    "content": string (the question text)
+    "options": array of 4 strings (A, B, C, D options)
+    "answer": string (the correct option letter: A, B, C, or D)
+    "difficulty": string (must be one of: easy, medium, hard)
+    "keywords": array of relevant string keywords
 
     Content:
     ${textContent.substring(0, 8000)} // Limit content to avoid token limits
 
-    Return only valid JSON, no additional text.
+    IMPORTANT: Your entire response must be ONLY the raw JSON array, starting with [ and ending with ]. Do not include any other text, markdown, or explanations.
     `
-
     const result = await model.generateContent(prompt)
     const response = await result.response
     const generatedText = response.text()
 
     let questions
     try {
-      questions = JSON.parse(generatedText)
+      // Clean the response to ensure it's valid JSON
+      const cleanedText = generatedText.replace(/```json/g, "").replace(/```/g, "").trim()
+      questions = JSON.parse(cleanedText)
     } catch (parseError) {
-      console.error("Failed to parse AI response:", parseError)
-      return { error: "Failed to generate valid questions" }, { status: 500 }
+      console.error("Failed to parse AI response:", parseError, "Response was:", generatedText)
+      return NextResponse.json({ error: "Failed to generate valid questions from AI" }, { status: 500 })
     }
 
     // Create testbank in database
@@ -127,7 +113,7 @@ export async function POST(request: NextRequest): Promise<any> {
 
     if (testbankError) {
       console.error("Testbank creation error:", testbankError)
-      return { error: "Failed to create testbank" }, { status: 500 }
+      return NextResponse.json({ error: "Failed to create testbank" }, { status: 500 })
     }
 
     // Insert questions
@@ -148,18 +134,20 @@ export async function POST(request: NextRequest): Promise<any> {
 
     if (questionsError) {
       console.error("Questions insertion error:", questionsError)
-      return { error: "Failed to save questions" }, { status: 500 }
+      // Attempt to clean up the created testbank if questions fail to insert
+      await supabase.from("testbanks").delete().eq("id", testbank.id)
+      return NextResponse.json({ error: "Failed to save questions" }, { status: 500 })
     }
 
     // Award credits for creating testbank
     await supabase.rpc("update_user_credits", {
-      user_id: user.id,
-      amount: 20,
-      reason: "AI_TESTBANK_GENERATION",
-      related_id: testbank.id,
+      user_id_input: user.id,
+      amount_input: 20,
+      reason_input: "AI_TESTBANK_GENERATION",
+      related_id_input: testbank.id,
     })
 
-    return {
+    return NextResponse.json({
       success: true,
       testbank: {
         id: testbank.id,
@@ -167,9 +155,9 @@ export async function POST(request: NextRequest): Promise<any> {
         description: testbank.description,
         questionCount: questions.length,
       },
-    }
+    })
   } catch (error) {
     console.error("Testbank generation error:", error)
-    return { error: "Internal server error" }, { status: 500 }
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 })
   }
 }
