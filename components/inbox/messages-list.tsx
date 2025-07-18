@@ -174,15 +174,23 @@ export function MessagesList() {
     if (!user) return
 
     try {
-      const { data, error } = await supabase.rpc("get_or_create_direct_chat", {
-        user1_id: user.id,
-        user2_id: friendId,
+      const response = await fetch("/api/chat/create-direct", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          otherUserId: friendId,
+        }),
       })
 
-      if (error) throw error
+      if (!response.ok) {
+        throw new Error("Failed to create chat")
+      }
 
+      const { chatId } = await response.json()
       setShowNewMessageDialog(false)
-      router.push(`/messages/${data}`)
+      router.push(`/messages/${chatId}`)
     } catch (error) {
       console.error("Error creating chat:", error)
       toast({

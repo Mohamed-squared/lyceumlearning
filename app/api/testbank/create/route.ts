@@ -13,37 +13,22 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
 
-    const { title, description, visibility, generationMethod } = await request.json()
+    const { title, description, visibility, generationMethod, recommendedUsage } = await request.json()
 
     if (!title || title.trim().length === 0) {
       return NextResponse.json({ error: "Title is required" }, { status: 400 })
     }
 
-    if (title.length > 100) {
-      return NextResponse.json({ error: "Title too long" }, { status: 400 })
-    }
-
-    if (description && description.length > 500) {
-      return NextResponse.json({ error: "Description too long" }, { status: 400 })
-    }
-
-    if (!["private", "opensource"].includes(visibility)) {
-      return NextResponse.json({ error: "Invalid visibility" }, { status: 400 })
-    }
-
-    if (!["manual", "ai"].includes(generationMethod)) {
-      return NextResponse.json({ error: "Invalid generation method" }, { status: 400 })
-    }
-
-    // Create the testbank
     const { data: testbank, error } = await supabase
       .from("testbanks")
       .insert({
         title: title.trim(),
         description: description?.trim() || null,
-        visibility,
-        generation_method: generationMethod,
         owner_id: user.id,
+        visibility: visibility || "private",
+        generation_method: generationMethod || "manual",
+        recommended_usage: recommendedUsage || "full_manual",
+        review_status: "not_reviewed",
       })
       .select()
       .single()

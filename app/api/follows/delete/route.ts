@@ -19,7 +19,6 @@ export async function DELETE(request: NextRequest) {
       return NextResponse.json({ error: "Following ID is required" }, { status: 400 })
     }
 
-    // Delete the follow relationship
     const { error } = await supabase.from("follows").delete().eq("follower_id", user.id).eq("following_id", followingId)
 
     if (error) {

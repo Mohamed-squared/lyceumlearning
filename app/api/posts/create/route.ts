@@ -19,25 +19,14 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Content is required" }, { status: 400 })
     }
 
-    if (content.length > 500) {
-      return NextResponse.json({ error: "Content too long" }, { status: 400 })
-    }
-
     const { data: post, error } = await supabase
       .from("posts")
       .insert({
-        user_id: user.id,
         content: content.trim(),
+        user_id: user.id,
         image_url: imageUrl || null,
       })
-      .select(`
-        *,
-        profiles:user_id (
-          username,
-          full_name,
-          avatar_url
-        )
-      `)
+      .select()
       .single()
 
     if (error) {

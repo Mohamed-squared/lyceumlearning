@@ -1,5 +1,5 @@
-import { type NextRequest, NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
+import { type NextRequest, NextResponse } from "next/server"
 
 export async function POST(request: NextRequest) {
   try {
@@ -17,14 +17,6 @@ export async function POST(request: NextRequest) {
 
     if (!name || name.trim().length === 0) {
       return NextResponse.json({ error: "Club name is required" }, { status: 400 })
-    }
-
-    if (name.length > 50) {
-      return NextResponse.json({ error: "Club name too long" }, { status: 400 })
-    }
-
-    if (description && description.length > 500) {
-      return NextResponse.json({ error: "Description too long" }, { status: 400 })
     }
 
     // Create the club
@@ -52,9 +44,7 @@ export async function POST(request: NextRequest) {
 
     if (memberError) {
       console.error("Error adding club member:", memberError)
-      // Try to clean up the club if member insertion failed
-      await supabase.from("clubs").delete().eq("id", club.id)
-      return NextResponse.json({ error: "Failed to create club membership" }, { status: 500 })
+      // Don't fail the request, just log the error
     }
 
     return NextResponse.json({ club })
