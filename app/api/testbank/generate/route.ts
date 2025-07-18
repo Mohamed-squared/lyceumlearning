@@ -1,7 +1,7 @@
 import type { NextRequest } from "next/server"
 import { createClient } from "@/lib/supabase/server"
 import { GoogleGenerativeAI } from "@google/generative-ai"
-import { pdfParse } from "pdf-parse"
+// import { pdfParse } from "pdf-parse" // REMOVED
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!)
 
@@ -54,7 +54,11 @@ export async function POST(request: NextRequest): Promise<any> {
       if (file.type === "application/pdf") {
         try {
           const buffer = await file.arrayBuffer()
+
+          // 👉 dynamic import so pdf-parse is evaluated at runtime, not build time
+          const { default: pdfParse } = await import("pdf-parse")
           const data = await pdfParse(Buffer.from(buffer))
+
           textContent = data.text
         } catch (error) {
           console.error("PDF parsing error:", error)
