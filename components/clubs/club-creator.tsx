@@ -30,21 +30,8 @@ export function ClubCreator() {
     setIsCreating(true)
 
     try {
-      // Check if club name is available
-      const { data: existingClub } = await supabase.from("clubs").select("name").eq("name", name.trim()).single()
-
-      if (existingClub) {
-        toast({
-          title: "Error",
-          description: "A club with this name already exists",
-          variant: "destructive",
-        })
-        setIsCreating(false)
-        return
-      }
-
       // Create club
-      const { data: club, error } = await supabase
+      const { data: club, error: clubError } = await supabase
         .from("clubs")
         .insert({
           name: name.trim(),
@@ -54,26 +41,28 @@ export function ClubCreator() {
         .select()
         .single()
 
-      if (error) throw error
+      if (clubError) throw clubError
 
-      // Add creator as member
-      await supabase.from("club_members").insert({
+      // Add creator as member with owner role
+      const { error: memberError } = await supabase.from("club_members").insert({
         club_id: club.id,
         user_id: user.id,
-        role: "moderator",
+        role: "owner",
       })
+
+      if (memberError) throw memberError
 
       toast({
         title: "Success!",
         description: "Your club has been created successfully.",
       })
 
-      router.push(`/clubs/${club.id}`)
-    } catch (error) {
+      router.push(`/clubs/${club.id}`) // You'll need to create this page
+    } catch (error: any) {
       console.error("Error creating club:", error)
       toast({
         title: "Error",
-        description: "Failed to create club. Please try again.",
+        description: error.message || "Failed to create club. Please try again.",
         variant: "destructive",
       })
     } finally {

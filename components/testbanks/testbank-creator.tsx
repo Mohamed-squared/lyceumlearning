@@ -9,7 +9,6 @@ import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { useAuth } from "@/components/providers/auth-provider"
-import { createClient } from "@/lib/supabase/client"
 import { toast } from "@/hooks/use-toast"
 import { useRouter } from "next/navigation"
 import { Wand2, FileText, Upload, Loader2 } from "lucide-react"
@@ -21,11 +20,8 @@ export function TestbankCreator() {
   const [generationMethod, setGenerationMethod] = useState<"ai" | "manual">("manual")
   const [isCreating, setIsCreating] = useState(false)
   const [file, setFile] = useState<File | null>(null)
-  const [questionCount, setQuestionCount] = useState(10)
-  const [difficulty, setDifficulty] = useState<"easy" | "medium" | "hard">("medium")
 
   const { user } = useAuth()
-  const supabase = createClient()
   const router = useRouter()
 
   const handleCreateTestbank = async () => {
@@ -34,72 +30,63 @@ export function TestbankCreator() {
     setIsCreating(true)
 
     try {
-      // Create testbank
-      const { data: testbank, error } = await supabase
-        .from("testbanks")
-        .insert({
-          owner_id: user.id,
-          title: title.trim(),
-          description: description.trim() || null,
-          visibility,
-          generation_method: generationMethod,
-        })
-        .select()
-        .single()
-
-      if (error) throw error
-
       if (generationMethod === "ai" && file) {
-        // Start AI generation process
-        await handleAIGeneration(testbank.id)
+        // Handle AI generation via API route
+        const formData = new FormData()
+        formData.append("file", file)
+        formData.append("title", title)
+        formData.append("description", description)
+
+        const response = await fetch("/api/testbank/generate", {
+          method: "POST",
+          body: formData,
+        })
+
+        const result = await response.json()
+        if (!response.ok) {
+          throw new Error(result.error || "Failed to generate testbank.")
+        }
+
+        toast({
+          title: "Testbank generation started!",
+          description: "Your AI-generated questions will be ready shortly.",
+        })
+        router.push(`/testbanks/${result.testbank.id}`)
+
+      } else {
+        // Handle manual creation
+        const { createClient } = await import("@/lib/supabase/client")
+        const supabase = createClient()
+
+        const { data: testbank, error } = await supabase
+          .from("testbanks")
+          .insert({
+            owner_id: user.id,
+            title: title.trim(),
+            description: description.trim() || null,
+            visibility,
+            generation_method: "manual",
+          })
+          .select()
+          .single()
+
+        if (error) throw error
+
+        toast({
+          title: "Testbank created!",
+          description: "Your testbank is ready for manual question entry.",
+        })
+        router.push(`/testbanks/${testbank.id}`)
       }
-
-      toast({
-        title: "Testbank created!",
-        description:
-          generationMethod === "ai"
-            ? "AI generation started. You'll be notified when complete."
-            : "Your testbank is ready for manual question entry.",
-      })
-
-      router.push(`/testbanks/${testbank.id}`)
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error creating testbank:", error)
       toast({
         title: "Error",
-        description: "Failed to create testbank. Please try again.",
+        description: error.message || "Failed to create testbank. Please try again.",
         variant: "destructive",
       })
     } finally {
       setIsCreating(false)
-    }
-  }
-
-  const handleAIGeneration = async (testbankId: string) => {
-    if (!file) return
-
-    const formData = new FormData()
-    formData.append("file", file)
-    formData.append("testbankId", testbankId)
-    formData.append("questionCount", questionCount.toString())
-    formData.append("difficulty", difficulty)
-
-    try {
-      const response = await fetch("/api/testbank/generate", {
-        method: "POST",
-        body: formData,
-      })
-
-      if (!response.ok) {
-        throw new Error("Failed to start AI generation")
-      }
-    } catch (error) {
-      console.error("Error starting AI generation:", error)
-      toast({
-        title: "Warning",
-        description: "Testbank created but AI generation failed to start.",
-        variant: "destructive",
-      })
     }
   }
 
@@ -146,50 +133,34 @@ export function TestbankCreator() {
                 </SelectContent>
               </Select>
             </div>
-
-            <div className="space-y-2">
+             <div className="space-y-2">
               <Label>Generation Method</Label>
-              <Select value={generationMethod} onValueChange={(value: any) => setGenerationMethod(value)}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="manual">Manual Entry</SelectItem>
-                  <SelectItem value="ai">AI Generated</SelectItem>
-                </SelectContent>
-              </Select>
+               <Tabs value={generationMethod} onValueChange={setGenerationMethod} className="w-full">
+                 <TabsList className="grid w-full grid-cols-2">
+                   <TabsTrigger value="manual"><FileText className="mr-2 h-4 w-4" />Manual</TabsTrigger>
+                   <TabsTrigger value="ai"><Wand2 className="mr-2 h-4 w-4" />AI</TabsTrigger>
+                 </TabsList>
+               </Tabs>
             </div>
           </div>
         </div>
 
-        <Tabs value={generationMethod} className="w-full">
-          <TabsList className="grid w-full grid-cols-2">
-            <TabsTrigger value="manual" onClick={() => setGenerationMethod("manual")}>
-              <FileText className="mr-2 h-4 w-4" />
-              Manual
-            </TabsTrigger>
-            <TabsTrigger value="ai" onClick={() => setGenerationMethod("ai")}>
-              <Wand2 className="mr-2 h-4 w-4" />
-              AI Generated
-            </TabsTrigger>
-          </TabsList>
-
-          <TabsContent value="manual" className="space-y-4">
-            <Card>
+        {generationMethod === 'manual' && (
+           <Card>
               <CardContent className="pt-6">
                 <p className="text-sm text-muted-foreground">
-                  Create your testbank and add questions manually. You'll be able to add questions after the testbank is
+                  Create your testbank and add questions manually. You&apos;ll be able to add questions after the testbank is
                   created.
                 </p>
               </CardContent>
             </Card>
-          </TabsContent>
+        )}
 
-          <TabsContent value="ai" className="space-y-4">
+        {generationMethod === 'ai' && (
             <Card>
               <CardContent className="pt-6 space-y-4">
                 <div className="space-y-2">
-                  <Label htmlFor="file">Upload Content</Label>
+                  <Label htmlFor="file">Upload Content (PDF, TXT)</Label>
                   <div className="border-2 border-dashed border-muted-foreground/25 rounded-lg p-6 text-center">
                     <Upload className="mx-auto h-12 w-12 text-muted-foreground" />
                     <div className="mt-4">
@@ -200,46 +171,17 @@ export function TestbankCreator() {
                       <Input
                         id="file-upload"
                         type="file"
-                        accept=".pdf,.txt,.srt"
+                        accept=".pdf,.txt"
                         onChange={(e) => setFile(e.target.files?.[0] || null)}
                         className="hidden"
                       />
                     </div>
-                    <p className="text-xs text-muted-foreground mt-2">PDF, TXT, or SRT files up to 10MB</p>
                   </div>
-                  {file && <p className="text-sm text-muted-foreground">Selected: {file.name}</p>}
-                </div>
-
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label>Questions to Generate</Label>
-                    <Input
-                      type="number"
-                      min="5"
-                      max="100"
-                      value={questionCount}
-                      onChange={(e) => setQuestionCount(Number.parseInt(e.target.value) || 10)}
-                    />
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label>Difficulty Level</Label>
-                    <Select value={difficulty} onValueChange={(value: any) => setDifficulty(value)}>
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="easy">Easy</SelectItem>
-                        <SelectItem value="medium">Medium</SelectItem>
-                        <SelectItem value="hard">Hard</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
+                  {file && <p className="text-sm text-muted-foreground mt-2">Selected: {file.name}</p>}
                 </div>
               </CardContent>
             </Card>
-          </TabsContent>
-        </Tabs>
+        )}
 
         <Button
           onClick={handleCreateTestbank}
