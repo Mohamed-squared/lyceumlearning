@@ -6,13 +6,14 @@ import { ThemeProvider } from "@/components/theme-provider"
 import { Toaster } from "@/components/ui/toaster"
 import { QueryProvider } from "@/components/providers/query-provider"
 import { AuthProvider } from "@/components/providers/auth-provider"
+import { MainNav } from "@/components/layout/main-nav"
 
 const inter = Inter({ subsets: ["latin"] })
 
 export const metadata: Metadata = {
   title: "Lyceum - Educational Platform",
   description: "A comprehensive educational platform for courses, testbanks, and collaborative learning",
-    generator: 'v0.dev'
+  generator: "v0.dev",
 }
 
 export default function RootLayout({
@@ -26,8 +27,11 @@ export default function RootLayout({
         <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
           <QueryProvider>
             <AuthProvider>
-              {children}
-              <Toaster />
+              <div className="min-h-screen bg-background">
+                <MainNav />
+                <main className="container mx-auto px-4 py-6 max-w-7xl">{children}</main>
+                <Toaster />
+              </div>
             </AuthProvider>
           </QueryProvider>
         </ThemeProvider>
