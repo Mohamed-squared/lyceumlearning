@@ -10,7 +10,8 @@ import { Label } from "@/components/ui/label"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { createClient } from "@/lib/supabase/client"
-import { BookOpen, Mail, Lock, Loader2 } from "lucide-react"
+import { BookOpen, Lock, Loader2 } from "lucide-react"
+import { FcGoogle } from "react-icons/fc"
 
 export default function LoginPage() {
   const [email, setEmail] = useState("")
@@ -35,6 +36,7 @@ export default function LoginPage() {
         setError(error.message)
       } else {
         router.push("/dashboard")
+        router.refresh() // To ensure layout re-renders with new auth state
       }
     } catch (err) {
       setError("An unexpected error occurred")
@@ -48,7 +50,7 @@ export default function LoginPage() {
     const { error } = await supabase.auth.signInWithOAuth({
       provider: "google",
       options: {
-        redirectTo: `${window.location.origin}/dashboard`,
+        redirectTo: `${window.location.origin}/auth/callback`,
       },
     })
 
@@ -74,7 +76,7 @@ export default function LoginPage() {
           </CardHeader>
           <CardContent className="space-y-6">
             <Button variant="outline" onClick={handleGoogleLogin} disabled={loading} className="w-full bg-transparent">
-              {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Mail className="mr-2 h-4 w-4" />}
+              {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <FcGoogle className="mr-2 h-5 w-5" />}
               Continue with Google
             </Button>
 

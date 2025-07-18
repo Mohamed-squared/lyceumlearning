@@ -342,21 +342,50 @@ export interface Database {
           user_id?: string
         }
       }
-      follows: {
+      friend_requests: {
         Row: {
+          id: string
+          sender_id: string
+          receiver_id: string
+          status: Database["public"]["Enums"]["friend_request_status"]
           created_at: string
-          follower_id: string
-          following_id: string
+          updated_at: string
         }
         Insert: {
+          id?: string
+          sender_id: string
+          receiver_id: string
+          status?: Database["public"]["Enums"]["friend_request_status"]
           created_at?: string
-          follower_id: string
-          following_id: string
+          updated_at?: string
         }
         Update: {
+          id?: string
+          sender_id?: string
+          receiver_id?: string
+          status?: Database["public"]["Enums"]["friend_request_status"]
           created_at?: string
-          follower_id?: string
-          following_id?: string
+          updated_at?: string
+        }
+      }
+      friendships: {
+        Row: {
+          id: string
+          user1_id: string
+          user2_id: string
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          user1_id: string
+          user2_id: string
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          user1_id?: string
+          user2_id?: string
+          created_at?: string
         }
       }
       messages: {
@@ -651,23 +680,35 @@ export interface Database {
       }
     }
     Views: {
-      [_ in never]: never
+      user_chats_view: {
+        Row: {
+          chat_id: string | null
+          chat_name: string | null
+          chat_type: Database["public"]["Enums"]["chat_type"] | null
+          last_message_at: string | null
+          last_message_content: string | null
+          last_message_created_at: string | null
+          last_message_sender_id: string | null
+          other_user_avatar_url: string | null
+          other_user_full_name: string | null
+          other_user_id: string | null
+          other_user_username: string | null
+          user_id: string | null
+        }
+      }
     }
     Functions: {
+      ban_user: {
+        Args: {
+          user_id_input: string
+        }
+        Returns: void
+      }
       create_notification: {
         Args: {
           user_id: string
           content: string
           link?: string
-        }
-        Returns: void
-      }
-      update_user_credits: {
-        Args: {
-          user_id: string
-          amount: number
-          reason: string
-          related_id?: string
         }
         Returns: void
       }
@@ -678,15 +719,24 @@ export interface Database {
         }
         Returns: string
       }
-      ban_user: {
+      is_chat_participant: {
         Args: {
-          user_id: string
+          chat_id_to_check: string
         }
-        Returns: void
+        Returns: boolean
       }
       unban_user: {
         Args: {
-          user_id: string
+          user_id_input: string
+        }
+        Returns: void
+      }
+      update_user_credits: {
+        Args: {
+          user_id_input: string
+          amount_input: number
+          reason_input: string
+          related_id_input?: string
         }
         Returns: void
       }
@@ -702,6 +752,7 @@ export interface Database {
       course_type: "textbook" | "course" | "reading_group" | "classroom"
       difficulty: "easy" | "medium" | "hard"
       enrollment_mode: "viewer" | "full_enroll" | "hybrid"
+      friend_request_status: "pending" | "accepted" | "declined" | "cancelled"
       generation_method: "ai" | "manual" | "parsed" | "hybrid"
       marking_method: "allow_ai" | "manual_only"
       permission_level: "view" | "edit" | "use" | "hybrid" | "full"
@@ -737,3 +788,8 @@ export type Challenge = Database["public"]["Tables"]["challenges"]["Row"]
 export type CourseContent = Database["public"]["Tables"]["course_content"]["Row"]
 export type CourseEnrollment = Database["public"]["Tables"]["course_enrollments"]["Row"]
 export type UserCourseProgress = Database["public"]["Tables"]["user_course_progress"]["Row"]
+export type Friendship = Database["public"]["Tables"]["friendships"]["Row"]
+export type FriendRequest = Database["public"]["Tables"]["friend_requests"]["Row"] & {
+  sender: Profile
+  receiver: Profile
+}

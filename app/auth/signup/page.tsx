@@ -12,6 +12,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { createClient } from "@/lib/supabase/client"
 import { BookOpen, Mail, User, Loader2 } from "lucide-react"
+import { FcGoogle } from "react-icons/fc"
 
 export default function SignupPage() {
   const [email, setEmail] = useState("")
@@ -37,11 +38,16 @@ export default function SignupPage() {
 
     try {
       // Check if username is available
-      const { data: existingUser } = await supabase
+      const { data: existingUser, error: checkError } = await supabase
         .from("profiles")
         .select("username")
-        .eq("username", username)
+        .eq("username", username.trim())
         .single()
+
+      if (checkError && checkError.code !== "PGRST116") {
+        // PGRST116 is "No rows found", which is what we want.
+        throw checkError
+      }
 
       if (existingUser) {
         setError("Username is already taken")
@@ -49,25 +55,28 @@ export default function SignupPage() {
         return
       }
 
-      const { data, error } = await supabase.auth.signUp({
+      const { data, error: signUpError } = await supabase.auth.signUp({
         email,
         password,
         options: {
           data: {
-            username,
-            full_name: fullName,
+            username: username.trim(),
+            full_name: fullName.trim(),
           },
         },
       })
 
-      if (error) {
-        setError(error.message)
+      if (signUpError) {
+        setError(signUpError.message)
       } else if (data.user) {
         // The profile will be created automatically via database trigger
+        // A confirmation email might be sent, but we'll redirect to dashboard
+        // Supabase handles the session.
         router.push("/dashboard")
+        router.refresh() // To ensure layout re-renders with new auth state
       }
-    } catch (err) {
-      setError("An unexpected error occurred")
+    } catch (err: any) {
+      setError(err.message || "An unexpected error occurred")
     } finally {
       setLoading(false)
     }
@@ -83,7 +92,7 @@ export default function SignupPage() {
     const { error } = await supabase.auth.signInWithOAuth({
       provider: "google",
       options: {
-        redirectTo: `${window.location.origin}/dashboard`,
+        redirectTo: `${window.location.origin}/auth/callback`,
       },
     })
 
@@ -109,7 +118,11 @@ export default function SignupPage() {
           </CardHeader>
           <CardContent className="space-y-6">
             <Button variant="outline" onClick={handleGoogleSignup} disabled={loading} className="w-full bg-transparent">
-              {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Mail className="mr-2 h-4 w-4" />}
+              {loading ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <FcGoogle className="mr-2 h-5 w-5" />
+              )}
               Continue with Google
             </Button>
 
@@ -194,7 +207,7 @@ export default function SignupPage() {
                 </Alert>
               )}
 
-              <Button type="submit" className="w-full" disabled={loading}>
+              <Button type="submit" className="w-full" disabled={loading || !agreedToTerms}>
                 {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <User className="mr-2 h-4 w-4" />}
                 Create Account
               </Button>

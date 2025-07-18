@@ -19,15 +19,15 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Missing required fields" }, { status: 400 })
     }
 
-    // Verify user is participant in chat
-    const { data: participant } = await supabase
+    // Verify user is participant in chat (RLS also enforces this)
+    const { data: participant, error: participantError } = await supabase
       .from("chat_participants")
       .select("*")
       .eq("chat_id", chatId)
       .eq("user_id", user.id)
       .single()
 
-    if (!participant) {
+    if (participantError || !participant) {
       return NextResponse.json({ error: "Not authorized to send messages to this chat" }, { status: 403 })
     }
 
@@ -43,7 +43,8 @@ export async function POST(request: NextRequest) {
       .single()
 
     if (error) {
-      throw error
+      console.error("Message insert error:", error)
+      throw new Error("Failed to insert message")
     }
 
     // Update chat last message time
