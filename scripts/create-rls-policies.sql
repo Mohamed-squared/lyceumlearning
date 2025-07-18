@@ -1,3 +1,17 @@
+-- Drop all existing policies first to avoid conflicts
+DO $$
+DECLARE
+    pol RECORD;
+BEGIN
+    FOR pol IN 
+        SELECT schemaname, tablename, policyname 
+        FROM pg_policies 
+        WHERE schemaname = 'public'
+    LOOP
+        EXECUTE format('DROP POLICY IF EXISTS %I ON %I.%I', pol.policyname, pol.schemaname, pol.tablename);
+    END LOOP;
+END $$;
+
 -- Profiles policies
 CREATE POLICY "Users can view all profiles" ON profiles FOR SELECT USING (true);
 CREATE POLICY "Users can update own profile" ON profiles FOR UPDATE USING (auth.uid() = id);
@@ -70,6 +84,34 @@ CREATE POLICY "Users can view course enrollments" ON course_enrollments FOR SELE
 );
 CREATE POLICY "Users can manage own enrollments" ON course_enrollments FOR ALL USING (auth.uid() = user_id);
 
+-- Course content policies
+CREATE POLICY "Users can view course content" ON course_content FOR SELECT USING (
+    course_id IN (
+        SELECT id FROM courses WHERE NOT is_archived
+        UNION
+        SELECT course_id FROM course_enrollments WHERE user_id = auth.uid()
+    )
+);
+
+-- User course progress policies
+CREATE POLICY "Users can view own progress" ON user_course_progress FOR SELECT USING (auth.uid() = user_id);
+CREATE POLICY "Users can update own progress" ON user_course_progress FOR ALL USING (auth.uid() = user_id);
+
+-- Assignments policies
+CREATE POLICY "Users can view assignments from enrolled courses" ON assignments FOR SELECT USING (
+    course_id IN (SELECT course_id FROM course_enrollments WHERE user_id = auth.uid())
+);
+
+-- Assignment submissions policies
+CREATE POLICY "Users can view own submissions" ON assignment_submissions FOR SELECT USING (auth.uid() = user_id);
+CREATE POLICY "Users can manage own submissions" ON assignment_submissions FOR ALL USING (auth.uid() = user_id);
+
+-- Challenges policies
+CREATE POLICY "Users can view challenges involving them" ON challenges FOR SELECT USING (
+    auth.uid() = challenger_id OR auth.uid() = opponent_id
+);
+CREATE POLICY "Users can create challenges" ON challenges FOR INSERT WITH CHECK (auth.uid() = challenger_id);
+
 -- Notifications policies
 CREATE POLICY "Users can view own notifications" ON notifications FOR SELECT USING (auth.uid() = user_id);
 CREATE POLICY "Users can update own notifications" ON notifications FOR UPDATE USING (auth.uid() = user_id);
@@ -77,8 +119,44 @@ CREATE POLICY "Users can update own notifications" ON notifications FOR UPDATE U
 -- Credits ledger policies
 CREATE POLICY "Users can view own credit history" ON credits_ledger FOR SELECT USING (auth.uid() = user_id);
 
+-- Chats policies
+CREATE POLICY "Users can view chats they participate in" ON chats FOR SELECT USING (
+    id IN (SELECT chat_id FROM chat_participants WHERE user_id = auth.uid())
+);
+
+-- Chat participants policies
+CREATE POLICY "Users can view chat participants" ON chat_participants FOR SELECT USING (
+    chat_id IN (SELECT chat_id FROM chat_participants WHERE user_id = auth.uid())
+);
+
+-- Messages policies
+CREATE POLICY "Users can view messages from their chats" ON messages FOR SELECT USING (
+    chat_id IN (SELECT chat_id FROM chat_participants WHERE user_id = auth.uid())
+);
+CREATE POLICY "Users can send messages to their chats" ON messages FOR INSERT WITH CHECK (
+    auth.uid() = sender_id AND
+    chat_id IN (SELECT chat_id FROM chat_participants WHERE user_id = auth.uid())
+);
+
 -- Admin policies for reports
 CREATE POLICY "Admins can view all reports" ON reports FOR SELECT USING (
     EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role = 'admin')
 );
 CREATE POLICY "Users can create reports" ON reports FOR INSERT WITH CHECK (auth.uid() = reporter_id);
+
+-- Friend requests policies
+CREATE POLICY "Users can view friend requests involving them" ON friend_requests FOR SELECT USING (
+    auth.uid() = sender_id OR auth.uid() = receiver_id
+);
+CREATE POLICY "Users can send friend requests" ON friend_requests FOR INSERT WITH CHECK (
+    auth.uid() = sender_id AND sender_id != receiver_id
+);
+CREATE POLICY "Users can update friend requests they received" ON friend_requests FOR UPDATE USING (
+    auth.uid() = receiver_id
+);
+
+-- Friendships policies
+CREATE POLICY "Users can view their friendships" ON friendships FOR SELECT USING (
+    auth.uid() = user1_id OR auth.uid() = user2_id
+);
+CREATE POLICY "System can create friendships" ON friendships FOR INSERT WITH CHECK (true);

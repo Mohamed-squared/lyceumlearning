@@ -1,111 +1,311 @@
 "use client"
 
-import { useState } from "react"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { useState, useEffect } from "react"
+import { Plus, MessageCircle, Users } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
+import { Card, CardContent } from "@/components/ui/card"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
-import { Badge } from "@/components/ui/badge"
-import { useAuth } from "@/components/providers/auth-provider"
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
+import { useToast } from "@/hooks/use-toast"
 import { createClient } from "@/lib/supabase/client"
-import { MessageCircle, Search, Plus } from "lucide-react"
-import { formatDistanceToNow } from "date-fns"
+import { useAuth } from "@/components/providers/auth-provider"
+import { useRouter } from "next/navigation"
 import Link from "next/link"
 
+interface Chat {
+  id: string
+  type: string
+  name: string | null
+  last_message_at: string | null
+  other_user?: {
+    id: string
+    username: string
+    full_name: string | null
+    avatar_url: string | null
+  }
+  last_message?: {
+    content: string
+    sender_id: string
+  }
+}
+
+interface Friend {
+  id: string
+  username: string
+  full_name: string | null
+  avatar_url: string | null
+}
+
 export function MessagesList() {
-  const [searchQuery, setSearchQuery] = useState("")
+  const [chats, setChats] = useState<Chat[]>([])
+  const [friends, setFriends] = useState<Friend[]>([])
+  const [loading, setLoading] = useState(true)
+  const [showNewMessageDialog, setShowNewMessageDialog] = useState(false)
+  const { toast } = useToast()
   const { user } = useAuth()
+  const router = useRouter()
   const supabase = createClient()
 
-  // For now, we'll show a placeholder since we haven't implemented the messages table yet
-  const conversations = [
-    {
-      id: "1",
-      participant: {
-        username: "john_doe",
-        full_name: "John Doe",
-        avatar_url: null,
-      },
-      lastMessage: "Hey, how's the calculus course going?",
-      lastMessageTime: new Date(Date.now() - 1000 * 60 * 30), // 30 minutes ago
-      unreadCount: 2,
-    },
-    {
-      id: "2",
-      participant: {
-        username: "jane_smith",
-        full_name: "Jane Smith",
-        avatar_url: null,
-      },
-      lastMessage: "Thanks for sharing that testbank!",
-      lastMessageTime: new Date(Date.now() - 1000 * 60 * 60 * 2), // 2 hours ago
-      unreadCount: 0,
-    },
-  ]
+  const fetchChats = async () => {
+    if (!user) return
+
+    try {
+      // Get user's chats
+      const { data: userChats, error: chatsError } = await supabase
+        .from("chat_participants")
+        .select(`
+          chat_id,
+          chats!inner(
+            id,
+            type,
+            name,
+            last_message_at
+          )
+        `)
+        .eq("user_id", user.id)
+
+      if (chatsError) throw chatsError
+
+      // For each chat, get the other participants and last message
+      const chatsWithDetails = await Promise.all(
+        userChats.map(async (userChat) => {
+          const chat = userChat.chats
+
+          // Get other participants (for direct chats)
+          if (chat.type === "direct") {
+            const { data: otherParticipant } = await supabase
+              .from("chat_participants")
+              .select(`
+                user_id,
+                profiles!inner(
+                  id,
+                  username,
+                  full_name,
+                  avatar_url
+                )
+              `)
+              .eq("chat_id", chat.id)
+              .neq("user_id", user.id)
+              .single()
+
+            if (otherParticipant) {
+              chat.other_user = otherParticipant.profiles
+            }
+          }
+
+          // Get last message
+          const { data: lastMessage } = await supabase
+            .from("messages")
+            .select("content, sender_id")
+            .eq("chat_id", chat.id)
+            .order("created_at", { ascending: false })
+            .limit(1)
+            .single()
+
+          if (lastMessage) {
+            chat.last_message = lastMessage
+          }
+
+          return chat
+        }),
+      )
+
+      setChats(
+        chatsWithDetails.sort(
+          (a, b) => new Date(b.last_message_at || 0).getTime() - new Date(a.last_message_at || 0).getTime(),
+        ),
+      )
+    } catch (error) {
+      console.error("Error fetching chats:", error)
+      toast({
+        title: "Error",
+        description: "Failed to load messages",
+        variant: "destructive",
+      })
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const fetchFriends = async () => {
+    if (!user) return
+
+    try {
+      const { data: friendships, error } = await supabase
+        .from("friendships")
+        .select(`
+          user1_id,
+          user2_id,
+          user1:profiles!friendships_user1_id_fkey(
+            id,
+            username,
+            full_name,
+            avatar_url
+          ),
+          user2:profiles!friendships_user2_id_fkey(
+            id,
+            username,
+            full_name,
+            avatar_url
+          )
+        `)
+        .or(`user1_id.eq.${user.id},user2_id.eq.${user.id}`)
+
+      if (error) throw error
+
+      const friendsList =
+        friendships
+          ?.map((friendship) => {
+            if (friendship.user1_id === user.id) {
+              return friendship.user2
+            } else {
+              return friendship.user1
+            }
+          })
+          .filter(Boolean) || []
+
+      setFriends(friendsList)
+    } catch (error) {
+      console.error("Error fetching friends:", error)
+    }
+  }
+
+  const startChatWithFriend = async (friendId: string) => {
+    if (!user) return
+
+    try {
+      const { data, error } = await supabase.rpc("get_or_create_direct_chat", {
+        user1_id: user.id,
+        user2_id: friendId,
+      })
+
+      if (error) throw error
+
+      setShowNewMessageDialog(false)
+      router.push(`/messages/${data}`)
+    } catch (error) {
+      console.error("Error creating chat:", error)
+      toast({
+        title: "Error",
+        description: "Failed to start chat",
+        variant: "destructive",
+      })
+    }
+  }
+
+  useEffect(() => {
+    fetchChats()
+    fetchFriends()
+  }, [user])
+
+  if (loading) {
+    return (
+      <div className="text-center py-8">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto"></div>
+      </div>
+    )
+  }
 
   return (
-    <Card>
-      <CardHeader>
-        <div className="flex items-center justify-between">
-          <CardTitle className="flex items-center space-x-2">
-            <MessageCircle className="h-5 w-5" />
-            <span>Messages</span>
-          </CardTitle>
-          <Button size="sm">
-            <Plus className="mr-2 h-4 w-4" />
-            New Message
-          </Button>
-        </div>
-        <div className="relative">
-          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <Input
-            placeholder="Search conversations..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="pl-10"
-          />
-        </div>
-      </CardHeader>
-      <CardContent>
-        {conversations.length === 0 ? (
-          <div className="text-center py-8">
-            <MessageCircle className="mx-auto h-12 w-12 text-muted-foreground" />
-            <h3 className="mt-2 text-sm font-semibold">No messages</h3>
-            <p className="mt-1 text-sm text-muted-foreground">Start a conversation with other learners!</p>
-          </div>
-        ) : (
-          <div className="space-y-2">
-            {conversations.map((conversation) => (
-              <Link key={conversation.id} href={`/inbox/chat/${conversation.participant.username}`} className="block">
-                <div className="flex items-center space-x-3 p-3 rounded-lg hover:bg-muted/50 transition-colors">
-                  <Avatar>
-                    <AvatarImage src={conversation.participant.avatar_url || ""} />
-                    <AvatarFallback>{conversation.participant.username.charAt(0).toUpperCase()}</AvatarFallback>
-                  </Avatar>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center justify-between">
-                      <p className="text-sm font-medium truncate">
-                        {conversation.participant.full_name || conversation.participant.username}
-                      </p>
-                      <div className="flex items-center space-x-2">
-                        <span className="text-xs text-muted-foreground">
-                          {formatDistanceToNow(conversation.lastMessageTime, { addSuffix: true })}
-                        </span>
-                        {conversation.unreadCount > 0 && (
-                          <Badge variant="default" className="h-5 w-5 rounded-full p-0 text-xs">
-                            {conversation.unreadCount}
-                          </Badge>
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <h2 className="text-xl font-semibold">Messages</h2>
+        <Dialog open={showNewMessageDialog} onOpenChange={setShowNewMessageDialog}>
+          <DialogTrigger asChild>
+            <Button size="sm" className="flex items-center space-x-2">
+              <Plus className="h-4 w-4" />
+              <span>New Message</span>
+            </Button>
+          </DialogTrigger>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Start a New Conversation</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4">
+              {friends.length === 0 ? (
+                <div className="text-center py-8">
+                  <Users className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+                  <p className="text-muted-foreground">No friends to message</p>
+                  <p className="text-sm text-muted-foreground mt-2">
+                    Add friends from the Social tab to start conversations!
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {friends.map((friend) => (
+                    <div
+                      key={friend.id}
+                      className="flex items-center justify-between p-3 rounded-lg border hover:bg-accent cursor-pointer"
+                      onClick={() => startChatWithFriend(friend.id)}
+                    >
+                      <div className="flex items-center space-x-3">
+                        <Avatar className="h-8 w-8">
+                          <AvatarImage src={friend.avatar_url || ""} />
+                          <AvatarFallback>{friend.username.charAt(0).toUpperCase()}</AvatarFallback>
+                        </Avatar>
+                        <div>
+                          <p className="font-medium">{friend.username}</p>
+                          {friend.full_name && <p className="text-sm text-muted-foreground">{friend.full_name}</p>}
+                        </div>
+                      </div>
+                      <MessageCircle className="h-4 w-4 text-muted-foreground" />
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </DialogContent>
+        </Dialog>
+      </div>
+
+      {chats.length === 0 ? (
+        <Card>
+          <CardContent className="text-center py-8">
+            <MessageCircle className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+            <p className="text-muted-foreground">No messages yet</p>
+            <p className="text-sm text-muted-foreground mt-2">Start a conversation with your friends!</p>
+          </CardContent>
+        </Card>
+      ) : (
+        <div className="space-y-2">
+          {chats.map((chat) => (
+            <Link key={chat.id} href={`/messages/${chat.id}`}>
+              <Card className="hover:bg-accent transition-colors cursor-pointer">
+                <CardContent className="p-4">
+                  <div className="flex items-center space-x-3">
+                    <Avatar>
+                      <AvatarImage src={chat.other_user?.avatar_url || ""} />
+                      <AvatarFallback>
+                        {chat.type === "direct"
+                          ? chat.other_user?.username.charAt(0).toUpperCase()
+                          : chat.name?.charAt(0).toUpperCase()}
+                      </AvatarFallback>
+                    </Avatar>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center justify-between">
+                        <p className="font-medium truncate">
+                          {chat.type === "direct" ? chat.other_user?.username : chat.name}
+                        </p>
+                        {chat.last_message_at && (
+                          <span className="text-xs text-muted-foreground">
+                            {new Date(chat.last_message_at).toLocaleDateString()}
+                          </span>
                         )}
                       </div>
+                      {chat.last_message && (
+                        <p className="text-sm text-muted-foreground truncate">
+                          {chat.last_message.sender_id === user?.id ? "You: " : ""}
+                          {chat.last_message.content}
+                        </p>
+                      )}
                     </div>
-                    <p className="text-sm text-muted-foreground truncate">{conversation.lastMessage}</p>
                   </div>
-                </div>
-              </Link>
-            ))}
-          </div>
-        )}
-      </CardContent>
-    </Card>
+                </CardContent>
+              </Card>
+            </Link>
+          ))}
+        </div>
+      )}
+    </div>
   )
 }
