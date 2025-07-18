@@ -19,6 +19,14 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Club name is required" }, { status: 400 })
     }
 
+    if (name.length > 50) {
+      return NextResponse.json({ error: "Club name too long" }, { status: 400 })
+    }
+
+    if (description && description.length > 500) {
+      return NextResponse.json({ error: "Description too long" }, { status: 400 })
+    }
+
     // Create the club
     const { data: club, error: clubError } = await supabase
       .from("clubs")
@@ -35,7 +43,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Failed to create club" }, { status: 500 })
     }
 
-    // Add the creator as the first member
+    // Add the creator as the first member with owner role
     const { error: memberError } = await supabase.from("club_members").insert({
       club_id: club.id,
       user_id: user.id,
@@ -44,7 +52,9 @@ export async function POST(request: NextRequest) {
 
     if (memberError) {
       console.error("Error adding club member:", memberError)
-      // Don't fail the request if member addition fails
+      // Try to clean up the club if member insertion failed
+      await supabase.from("clubs").delete().eq("id", club.id)
+      return NextResponse.json({ error: "Failed to create club membership" }, { status: 500 })
     }
 
     return NextResponse.json({ club })

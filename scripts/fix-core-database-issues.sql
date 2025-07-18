@@ -1,18 +1,7 @@
 -- PERFECT DATABASE FIX SCRIPT
 -- This script will fix all RLS policies, functions, and database issues
 
--- Step 1: Drop all existing functions that might conflict
-DROP FUNCTION IF EXISTS public.is_chat_participant(uuid);
-DROP FUNCTION IF EXISTS public.get_or_create_direct_chat(uuid, uuid);
-DROP FUNCTION IF EXISTS public.handle_new_user();
-DROP FUNCTION IF EXISTS public.handle_updated_at();
-DROP FUNCTION IF EXISTS public.handle_accepted_friend_request();
-DROP FUNCTION IF EXISTS public.ban_user(uuid);
-DROP FUNCTION IF EXISTS public.unban_user(uuid);
-DROP FUNCTION IF EXISTS public.update_user_credits(uuid, integer, text, uuid);
-DROP FUNCTION IF EXISTS public.is_club_owner(uuid);
-
--- Step 2: Drop all existing RLS policies
+-- Step 1: Drop all existing RLS policies FIRST (before dropping functions)
 DO $$ 
 DECLARE 
   r RECORD;
@@ -22,6 +11,17 @@ BEGIN
     EXECUTE 'DROP POLICY IF EXISTS ' || quote_ident(r.policyname) || ' ON public.' || quote_ident(r.tablename); 
   END LOOP; 
 END$$;
+
+-- Step 2: Now drop all existing functions (no dependencies left)
+DROP FUNCTION IF EXISTS public.is_chat_participant(uuid) CASCADE;
+DROP FUNCTION IF EXISTS public.get_or_create_direct_chat(uuid, uuid) CASCADE;
+DROP FUNCTION IF EXISTS public.handle_new_user() CASCADE;
+DROP FUNCTION IF EXISTS public.handle_updated_at() CASCADE;
+DROP FUNCTION IF EXISTS public.handle_accepted_friend_request() CASCADE;
+DROP FUNCTION IF EXISTS public.ban_user(uuid) CASCADE;
+DROP FUNCTION IF EXISTS public.unban_user(uuid) CASCADE;
+DROP FUNCTION IF EXISTS public.update_user_credits(uuid, integer, text, uuid) CASCADE;
+DROP FUNCTION IF EXISTS public.is_club_owner(uuid) CASCADE;
 
 -- Step 3: Create all necessary helper functions
 CREATE OR REPLACE FUNCTION public.is_chat_participant(chat_id_input uuid)

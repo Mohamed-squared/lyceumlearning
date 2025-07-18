@@ -1,5 +1,5 @@
-import { type NextRequest, NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
+import { type NextRequest, NextResponse } from "next/server"
 
 export async function POST(request: NextRequest) {
   try {
@@ -19,6 +19,10 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Content is required" }, { status: 400 })
     }
 
+    if (content.length > 500) {
+      return NextResponse.json({ error: "Content too long" }, { status: 400 })
+    }
+
     const { data: post, error } = await supabase
       .from("posts")
       .insert({
@@ -26,7 +30,14 @@ export async function POST(request: NextRequest) {
         content: content.trim(),
         image_url: imageUrl || null,
       })
-      .select()
+      .select(`
+        *,
+        profiles:user_id (
+          username,
+          full_name,
+          avatar_url
+        )
+      `)
       .single()
 
     if (error) {
