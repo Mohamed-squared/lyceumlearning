@@ -35,16 +35,17 @@ export function CreatePostCard() {
       if (imageFile) {
         const fileExt = imageFile.name.split(".").pop()
         const fileName = `${user.id}-${Date.now()}.${fileExt}`
+        const filePath = `${fileName}`
 
-        const { data: uploadData, error: uploadError } = await supabase.storage
+        const { error: uploadError } = await supabase.storage
           .from("post-images")
-          .upload(fileName, imageFile)
+          .upload(filePath, imageFile)
 
         if (uploadError) throw uploadError
 
         const {
           data: { publicUrl },
-        } = supabase.storage.from("post-images").getPublicUrl(uploadData.path)
+        } = supabase.storage.from("post-images").getPublicUrl(filePath)
 
         imageUrl = publicUrl
       }
@@ -61,19 +62,25 @@ export function CreatePostCard() {
       // Reset form
       setContent("")
       setImageFile(null)
+      const fileInput = document.getElementById('image') as HTMLInputElement;
+      if (fileInput) fileInput.value = "";
+
 
       // Refresh feed
       queryClient.invalidateQueries({ queryKey: ["home-feed"] })
+      queryClient.invalidateQueries({ queryKey: ["profile-posts", user.id] })
+      queryClient.invalidateQueries({ queryKey: ["profile-stats", user.id] })
+
 
       toast({
         title: "Post created!",
         description: "Your post has been shared successfully.",
       })
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error creating post:", error)
       toast({
         title: "Error",
-        description: "Failed to create post. Please try again.",
+        description: error.message || "Failed to create post. Please try again.",
         variant: "destructive",
       })
     } finally {
