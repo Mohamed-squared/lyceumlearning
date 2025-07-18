@@ -1,22 +1,22 @@
-import { createClient } from "@/lib/supabase/server"
 import { type NextRequest, NextResponse } from "next/server"
+import { createClient } from "@/lib/supabase/server"
 
 export async function POST(request: NextRequest) {
   try {
     const supabase = await createClient()
-
     const {
       data: { user },
+      error: authError,
     } = await supabase.auth.getUser()
 
-    if (!user) {
+    if (authError || !user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
 
     const { otherUserId } = await request.json()
 
     if (!otherUserId) {
-      return NextResponse.json({ error: "Missing otherUserId" }, { status: 400 })
+      return NextResponse.json({ error: "Other user ID is required" }, { status: 400 })
     }
 
     // Use the database function to get or create direct chat
@@ -26,7 +26,7 @@ export async function POST(request: NextRequest) {
     })
 
     if (error) {
-      console.error("Error creating/getting chat:", error)
+      console.error("Error creating direct chat:", error)
       return NextResponse.json({ error: "Failed to create chat" }, { status: 500 })
     }
 
