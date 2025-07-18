@@ -4,8 +4,6 @@ import { GoogleGenerativeAI } from "@google/generative-ai"
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!)
 
-export const runtime = "edge" // Use edge runtime for this route
-
 export async function POST(request: NextRequest): Promise<NextResponse> {
   try {
     const supabase = await createClient()
@@ -38,12 +36,12 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       title = titleField || "Generated Testbank"
       description = descriptionField || "AI-generated testbank from uploaded content"
 
-      // Process PDF file (dynamically import to support edge runtime)
+      // Process PDF file
       if (file.type === "application/pdf") {
         try {
-          const { default: pdf } = await import("pdf-parse/lib/pdf-parse.js")
+          const pdfParse = (await import("pdf-parse")).default
           const buffer = await file.arrayBuffer()
-          const data = await pdf(Buffer.from(buffer))
+          const data = await pdfParse(Buffer.from(buffer))
           textContent = data.text
         } catch (error) {
           console.error("PDF parsing error:", error)
@@ -90,7 +88,10 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     let questions
     try {
       // Clean the response to ensure it's valid JSON
-      const cleanedText = generatedText.replace(/```json/g, "").replace(/```/g, "").trim()
+      const cleanedText = generatedText
+        .replace(/```json/g, "")
+        .replace(/```/g, "")
+        .trim()
       questions = JSON.parse(cleanedText)
     } catch (parseError) {
       console.error("Failed to parse AI response:", parseError, "Response was:", generatedText)
